@@ -128,8 +128,8 @@ def december_chart() -> None:
 
     df_december_raw['predicted_rate'] = predictions
 
-    df_december_raw.to_csv('data/december_chart_inputs', index=False)
-    print('December predicted file saved to data/december_chart_inputs.')
+    df_december_raw.to_csv('data/december_chart_inputs.csv', index=False)
+    print('December predicted file saved to data/december_chart_inputs.csv.')
 
 
 if __name__ == '__main__':
