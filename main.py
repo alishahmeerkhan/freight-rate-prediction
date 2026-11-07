@@ -14,7 +14,7 @@ VALIDATION_TEMPLATE: str = 'data/validation-predictions-template.csv'
 DECEMBER_FILE: str = 'data/december-chart-inputs.csv'
 MODEL_PATH: str = 'model/freight_rate_prediction.pkl'
 
-def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+def clean_data(df: pd.DataFrame, is_training: bool=True) -> pd.DataFrame:
     drop_columns: list[str] = ['pickup', 'delivery', 'pickup_lat', 'pickup_lon', 
                     'delivery_lat', 'delivery_lon', 'date']
 
@@ -25,15 +25,28 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df['market_index'] = df['market_index'].fillna(df['market_index'].mean())
     print('\nMissing values have been filled.')
 
-    encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    encoded_array = encoder.fit_transform(df[['equipment']])
-    encoded_df = pd.DataFrame(
-        encoded_array, 
-        columns=encoder.get_feature_names_out(), 
-        index=df.index
-    )
-    df = pd.concat([df.drop('equipment', axis=1), encoded_df], axis=1)
-    print('\nCategorical data encoding completed.')
+    if is_training:
+        encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+        encoded_array = encoder.fit_transform(df[['equipment']])
+        encoded_df = pd.DataFrame(
+            encoded_array, 
+            columns=encoder.get_feature_names_out(), 
+            index=df.index
+        )
+        df = pd.concat([df.drop('equipment', axis=1), encoded_df], axis=1)
+        dump(encoder, 'model/encoder.pkl')
+        print('\nCategorical data encoding completed and encoder saved at model/encoder.pkl.')
+    else:
+        encoder = load('model/encoder.pkl')
+        encoded_array = encoder.transform(df[['equipment']])
+
+        encoded_df = pd.DataFrame(
+            encoded_array,
+            columns=encoder.get_feature_names_out(),
+            index=df.index
+        )
+        df = pd.concat([df.drop('equipment', axis=1), encoded_df], axis=1)
+        print('\nCategorical data encoding applied from saved encoder.')
 
     if 'posted_rate' in df.columns:
         threshold = df['posted_rate'].quantile(0.97)
@@ -68,7 +81,7 @@ def validation() -> None:
     df_validation_template: pd.DataFrame = pd.read_csv(VALIDATION_TEMPLATE)
 
     print('Cleaning validation data...')
-    df_validation = clean_data(df_validation)
+    df_validation = clean_data(df_validation, is_training=False)
     df_validation_copy = df_validation.drop(columns=['load_id'])
 
     print('Model Successfully loaded.')
@@ -84,8 +97,8 @@ def validation() -> None:
 
     df_validation_template = df_validation_template.drop(columns=['predicted_rate'], errors='ignore')
     final_df = df_validation_template.merge(prediction_df, on='load_id', how='left')
-    final_df.to_csv('prediction/validation_predictions.csv', index=False)
-    print('Predicted file saved to prediction/validation_predictions.csv.')
+    final_df.to_csv('validation_predictions.csv', index=False)
+    print('Predicted file saved to validation_predictions.csv.')
 
 
 if __name__ == '__main__':
@@ -101,7 +114,7 @@ if __name__ == '__main__':
     if not args.train and not args.validation and not args.december:
         print('Please enter the correct arguement.')
         print('> python main.py --train\t[To train the model]')
-        print('> python main.py --validation\t[To train the model]')
+        print('> python main.py --validation\t[To run validation predictions]')
         print('> python main.py --december\t[To fill the december table]')        
 
     if args.train:
@@ -110,7 +123,7 @@ if __name__ == '__main__':
         df: pd.DataFrame = pd.read_csv(TRAIN_FILE)
 
         print('Cleaning the data...')
-        df = clean_data(df)
+        df = clean_data(df, is_training=True)
 
         print('Training the model...')
         train_model(df) 
