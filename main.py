@@ -1,16 +1,18 @@
 import argparse
 import numpy as np
 import pandas as pd
-from joblib import dump
+from joblib import dump, load
 
 from xgboost import XGBRegressor
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 
 TRAIN_FILE: str = 'data/train-test.csv'
-DECEMBER_FILE: str = 'data/december-chart-inputs'
+VALIDATION_FILE: str = 'data/validation.csv'
+VALIDATION_TEMPLATE: str = 'data/validation-predictions-template.csv'
+DECEMBER_FILE: str = 'data/december-chart-inputs.csv'
+MODEL_PATH: str = 'model/freight_rate_prediction.pkl'
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     drop_columns: list[str] = ['pickup', 'delivery', 'pickup_lat', 'pickup_lon', 
@@ -33,9 +35,10 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df = pd.concat([df.drop('equipment', axis=1), encoded_df], axis=1)
     print('\nCategorical data encoding completed.')
 
-    threshold = df['posted_rate'].quantile(0.97)
-    df = df[df['posted_rate'] <= threshold]
-    print('\nDropped outliers from the data.')
+    if 'posted_rate' in df.columns:
+        threshold = df['posted_rate'].quantile(0.97)
+        df = df[df['posted_rate'] <= threshold]
+        print('\nDropped outliers from the data.')
 
     return df
 
@@ -44,39 +47,61 @@ def train_model(df: pd.DataFrame) -> None:
     y = df['posted_rate']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    print('Training Scikit Model...')
-    model = LinearRegression()
-    model.fit(X_train, y_train)
-
     print('Training XGBoost Model...')
     model_xgb = XGBRegressor(n_estimators=180, learning_rate=0.05, max_depth=10, objective='reg:absoluteerror')
     model_xgb.fit(X_train, y_train)
 
-    y_pred_sk = model.predict(X_test)
     y_pred_xgb = model_xgb.predict(X_test)
-    print('\n\nEvaluation of Scikit Learn:')
-    print(f'Mean Absolute Error:     {mean_absolute_error(y_test, y_pred_sk):.6f}')
-    print(f'Root Mean Squared Error: {root_mean_squared_error(y_test, y_pred_sk):.6f}')
 
     print('\n\nEvaluation of XGBoost:')
     print(f'Mean Absolute Error:     {mean_absolute_error(y_test, y_pred_xgb):.6f}')
     print(f'Root Mean Squared Error: {root_mean_squared_error(y_test, y_pred_xgb):.6f}')
 
+    save_model(model_xgb)
+
 def save_model(model) -> None:
-    pass
+    dump(model, MODEL_PATH)
+    print(f'\n\nModel successfully saved at {MODEL_PATH}.')
+
+def validation() -> None:
+    df_validation: pd.DataFrame = pd.read_csv(VALIDATION_FILE)
+    df_validation_template: pd.DataFrame = pd.read_csv(VALIDATION_TEMPLATE)
+
+    print('Cleaning validation data...')
+    df_validation = clean_data(df_validation)
+    df_validation_copy = df_validation.drop(columns=['load_id'])
+
+    print('Model Successfully loaded.')
+    model = load(MODEL_PATH)
+
+    predictions = model.predict(df_validation_copy)
+    print('Prediction completed.')
+
+    prediction_df = pd.DataFrame({
+        'load_id': df_validation['load_id'],
+        'predicted_rate': predictions
+    })
+
+    df_validation_template = df_validation_template.drop(columns=['predicted_rate'], errors='ignore')
+    final_df = df_validation_template.merge(prediction_df, on='load_id', how='left')
+    final_df.to_csv('prediction/validation_predictions.csv', index=False)
+    print('Predicted file saved to prediction/validation_predictions.csv.')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Choose between training the model and filling the December Charts')
 
     parser.add_argument('--train', action='store_true', help='Train the model and save it.')
+    parser.add_argument('--validation', action='store_true', help='Fill the validation csv')
     parser.add_argument('--december', action='store_true', help='Fill the december fill for graph generation.')
 
     args = parser.parse_args()
 
 
-    if not args.train and not args.december:
+    if not args.train and not args.validation and not args.december:
         print('Please enter the correct arguement.')
-        print('> python main.py --train\t\t[To train the model]')
+        print('> python main.py --train\t[To train the model]')
+        print('> python main.py --validation\t[To train the model]')
         print('> python main.py --december\t[To fill the december table]')        
 
     if args.train:
@@ -89,3 +114,9 @@ if __name__ == '__main__':
 
         print('Training the model...')
         train_model(df) 
+
+    elif args.validation:
+        validation()
+
+    elif args.december:
+        pass
