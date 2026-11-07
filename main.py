@@ -15,8 +15,12 @@ DECEMBER_FILE: str = 'data/december-chart-inputs.csv'
 MODEL_PATH: str = 'model/freight_rate_prediction.pkl'
 
 def clean_data(df: pd.DataFrame, is_training: bool=True) -> pd.DataFrame:
+    if 'date' in df.columns:
+        df['parsed_date'] = pd.to_datetime(df['date'])
+        df['day_of_month'] = df['parsed_date'].dt.day
+        df['day_of_week'] = df['parsed_date'].dt.dayofweek
     drop_columns: list[str] = ['pickup', 'delivery', 'pickup_lat', 'pickup_lon', 
-                    'delivery_lat', 'delivery_lon', 'date']
+                    'delivery_lat', 'delivery_lon', 'date', 'parsed_date']
 
     df = df.drop(columns=drop_columns)
     print(f'\n\n{len(drop_columns)} columns dropped.')
@@ -99,6 +103,9 @@ def validation() -> None:
     final_df = df_validation_template.merge(prediction_df, on='load_id', how='left')
     final_df.to_csv('validation_predictions.csv', index=False)
     print('Predicted file saved to validation_predictions.csv.')
+
+def december_chart() -> None:
+    pass
 
 
 if __name__ == '__main__':
