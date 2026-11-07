@@ -22,11 +22,13 @@ def clean_data(df: pd.DataFrame, is_training: bool=True) -> pd.DataFrame:
     drop_columns: list[str] = ['pickup', 'delivery', 'pickup_lat', 'pickup_lon', 
                     'delivery_lat', 'delivery_lon', 'date', 'parsed_date']
 
-    df = df.drop(columns=drop_columns)
+    df = df.drop(columns=drop_columns, errors='ignore')
     print(f'\n\n{len(drop_columns)} columns dropped.')
 
-    df['weight'] = df['weight'].fillna(df['weight'].mean())
-    df['market_index'] = df['market_index'].fillna(df['market_index'].mean())
+    if 'weight' in df.columns:
+        df['weight'] = df['weight'].fillna(df['weight'].mean())
+    if 'market_index' in df.columns:
+        df['market_index'] = df['market_index'].fillna(df['market_index'].mean())
     print('\nMissing values have been filled.')
 
     if is_training:
@@ -105,7 +107,29 @@ def validation() -> None:
     print('Predicted file saved to validation_predictions.csv.')
 
 def december_chart() -> None:
-    pass
+    df_december_raw = pd.read_csv(DECEMBER_FILE)
+    df_december_clean = df_december_raw.copy()
+
+    print('Cleaning December data...')
+    df_december_clean = clean_data(df_december_clean, is_training=False)
+
+    print('Model Successfully loaded.')
+    model = load(MODEL_PATH)
+
+    expected_columns = model.feature_names_in_
+    for column in expected_columns:
+        if column not in df_december_clean.columns:
+            df_december_clean[column] = np.nan
+
+    X_december = df_december_clean[expected_columns]
+
+    predictions = model.predict(X_december)
+    print('Prediction completed.')
+
+    df_december_raw['predicted_rate'] = predictions
+
+    df_december_raw.to_csv('data/december_chart_inputs', index=False)
+    print('December predicted file saved to data/december_chart_inputs.')
 
 
 if __name__ == '__main__':
@@ -136,7 +160,9 @@ if __name__ == '__main__':
         train_model(df) 
 
     elif args.validation:
+        print('MODE: Validation of model...')
         validation()
 
     elif args.december:
-        pass
+        print('MODE: December chart filling...')
+        december_chart()
